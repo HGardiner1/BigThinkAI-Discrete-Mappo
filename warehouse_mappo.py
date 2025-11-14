@@ -299,7 +299,7 @@ class WarehouseEnv(ParallelEnv):
 if __name__ == "__main__":
     env = WarehouseEnv()
     obs, infos = env.reset()
-    for _ in range(10):
+    for _ in range(50):
         actions = {a: env.action_spaces[a].sample() for a in env.agents}
         obs, rewards, terms, truncs, infos = env.step(actions)
         env.render()
