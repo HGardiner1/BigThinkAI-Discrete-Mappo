@@ -1,6 +1,7 @@
 import numpy as np
 from gymnasium import spaces
 from pettingzoo.utils import ParallelEnv
+from log import QTableLogger
 
 
 # ----- CONSTANTS -----
@@ -32,7 +33,7 @@ class WarehouseEnv(ParallelEnv):
         "render_modes": ["human"],
     }
 
-    def __init__(self, grid_size=(5, 5), n_robots=2, n_targets=2, max_steps=50):
+    def __init__(self, grid_size=(9, 9), n_robots=3, n_targets=3, max_steps=50):
         self.grid_h, self.grid_w = grid_size
         self.n_robots = n_robots
         self.n_targets = n_targets
@@ -63,6 +64,9 @@ class WarehouseEnv(ParallelEnv):
         self.depot_pos = None
         self.bay_pos = None
         self.step_count = 0
+        
+        # Initialize Q-table logger
+        self.logger = QTableLogger(log_dir="logs", log_filename="q_tables.txt")
 
     # ------------------------------------------------------------------ #
     #  Required PettingZoo methods                                       #
@@ -121,20 +125,34 @@ class WarehouseEnv(ParallelEnv):
         infos = {a: {} for a in self.agents}
 
         # Move phase
+        new_positions = {}
+        previous_positions = set(self.robot_positions.values())
+
         for agent, act in actions.items():
             r, c = self.robot_positions[agent]
 
+            # simulate move
+            nr, nc = r, c
             if act == ACTION_UP:
-                r = max(0, r - 1)
+                nr = max(0, r - 1)
             elif act == ACTION_DOWN:
-                r = min(self.grid_h - 1, r + 1)
+                nr = min(self.grid_h - 1, r + 1)
             elif act == ACTION_LEFT:
-                c = max(0, c - 1)
+                nc = max(0, c - 1)
             elif act == ACTION_RIGHT:
-                c = min(self.grid_w - 1, c + 1)
-            # stay / pick / drop do not move
+                nc = min(self.grid_w - 1, c + 1)
 
-            self.robot_positions[agent] = (r, c)
+            # blocking rule: cannot move into an occupied cell
+            if (nr, nc) in previous_positions or (nr, nc) in new_positions.values():
+                # penalize blocked attempt
+                rewards[agent] -= 0.05
+                infos[agent]["blocked"] = True
+                new_positions[agent] = (r, c)   # remain in place
+            else:
+                new_positions[agent] = (nr, nc)
+
+        # AFTER loop, commit new positions
+        self.robot_positions = new_positions
 
         # Pick / drop + rewards
         for agent, act in actions.items():
@@ -199,6 +217,82 @@ class WarehouseEnv(ParallelEnv):
         print(grid_copy)
         print("carry:", self.robot_carry)
         print()
+
+    def log_state(self, central_q_table=None, agent_q_tables=None, episode=None):
+        """
+        Log the current state and Q-tables.
+        
+        Args:
+            central_q_table: Q-table from central agent (optional)
+            agent_q_tables: Dictionary mapping agent names to Q-tables (optional)
+            episode: Episode number (optional)
+        """
+        self.logger.log_q_tables(
+            central_q_table=central_q_table,
+            agent_q_tables=agent_q_tables,
+            episode=episode,
+            step=self.step_count
+        )
+
+    def visualize_q_tables(self, central_q_table=None, agent_q_tables=None, 
+                           episode=None, save_dir="logs/visualizations"):
+        """
+        Visualize Q-table heatmaps for central and decentralized agents.
+        
+        Args:
+            central_q_table: Q-table from central agent (optional)
+            agent_q_tables: Dictionary mapping agent names to Q-tables (optional)
+            episode: Episode number (optional)
+            save_dir: Directory to save visualizations
+        """
+        self.logger.visualize_all_agents_heatmaps(
+            agent_q_tables=agent_q_tables,
+            central_q_table=central_q_table,
+            episode=episode,
+            step=self.step_count,
+            save_dir=save_dir
+        )
+
+    def visualize_q_grids(self, central_q_table=None, agent_q_tables=None, 
+                          episode=None, save_dir="logs/visualizations"):
+        """
+        Visualize grid representations of max Q-values for all agents.
+        
+        Args:
+            central_q_table: Q-table from central agent (optional)
+            agent_q_tables: Dictionary mapping agent names to Q-tables (optional)
+            episode: Episode number (optional)
+            save_dir: Directory to save visualizations
+        """
+        if central_q_table is not None:
+            self.logger.visualize_q_table_grid(
+                central_q_table, "Central_Agent", episode, self.step_count, save_dir
+            )
+        
+        if agent_q_tables:
+            for agent_name, q_table in agent_q_tables.items():
+                self.logger.visualize_q_table_grid(
+                    q_table, agent_name, episode, self.step_count, save_dir
+                )
+
+    def plot_q_statistics(self, central_q_table=None, agent_q_tables=None, 
+                          episode=None, save_dir="logs/visualizations"):
+        """
+        Plot Q-value statistics (mean, min, max, std) across all agents.
+        
+        Args:
+            central_q_table: Q-table from central agent (optional)
+            agent_q_tables: Dictionary mapping agent names to Q-tables (optional)
+            episode: Episode number (optional)
+            save_dir: Directory to save visualization
+        """
+        self.logger.plot_q_value_statistics(
+            agent_q_tables=agent_q_tables,
+            central_q_table=central_q_table,
+            episode=episode,
+            step=self.step_count,
+            save_dir=save_dir
+        )
 
 
 # Small manual test: python warehouse_env_simple.py
