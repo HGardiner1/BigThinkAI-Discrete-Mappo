@@ -92,3 +92,18 @@ for ep in range(EPISODES):
     # Update MAPPO after 1 episode
     mappo.update(buffer)
     print(f"Episode {ep} finished.")
+    
+    # Save state-action heatmap on episode end
+    try:
+        env.save_episode_state_action_heatmap(episode=ep, save_dir="logs/visualizations")
+    except Exception as e:
+        print(f"Failed to save heatmap: {e}")
+
+# Training complete
+print("\n" + "="*60)
+print("TRAINING COMPLETE")
+print("="*60)
+print(f"Episodes trained: {EPISODES}")
+print(f"Steps per episode: {STEPS}")
+print(f"State-action heatmaps saved to: logs/visualizations/")
+print("="*60 + "\n")

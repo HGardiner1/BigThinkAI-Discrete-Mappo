@@ -215,29 +215,7 @@ class WarehouseVisualizer:
         )
         self.screen.blit(carrying_text, (legend_x, info_y + 35))
 
-        # Per-agent instantaneous rewards and optional Q-value summary
-        right_x = self.window_width - 200
-        per_agent_y = info_y + 10
-        rewards = getattr(self.env, 'last_step_rewards', None)
-        qvals = getattr(self.env, 'last_q_values', None)
 
-        if rewards is not None:
-            for i, agent in enumerate(self.env.possible_agents):
-                r = rewards.get(agent, 0.0)
-                agent_label = self.small_font.render(f"{agent}: R={r:.2f}", True, self.COLORS['text'])
-                self.screen.blit(agent_label, (right_x, per_agent_y + i * 20))
-
-                # show max Q if available for this agent
-                if qvals and agent in qvals:
-                    try:
-                        q_arr = np.asarray(qvals[agent])
-                        qmax = float(np.nanmax(q_arr))
-                        qarg = int(np.nanargmax(q_arr))
-                        q_label = self.small_font.render(f"Qmax={qmax:.2f} (a{qarg})", True, self.COLORS['text'])
-                        self.screen.blit(q_label, (right_x + 100, per_agent_y + i * 20))
-                    except Exception:
-                        # ignore rendering q-values if shaped unexpectedly
-                        pass
 
     def close(self):
         """Close the pygame window."""
@@ -255,7 +233,7 @@ def run_visualization(n_episodes=5, n_steps_per_episode=100, render=True):
     """
     # Create environment (import inside function to avoid circular imports)
     from warehouse_mappo import WarehouseEnv
-    env = WarehouseEnv(grid_size=(9, 9), n_robots=3, n_targets=5, max_steps=n_steps_per_episode, render=render, render_fps=5)
+    env = WarehouseEnv(grid_size=(7, 7), n_robots=3, n_targets=5, max_steps=n_steps_per_episode, render=render, render_fps=5)
     
     # Create visualizer
     if render:

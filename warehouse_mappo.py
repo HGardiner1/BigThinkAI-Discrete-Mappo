@@ -33,7 +33,7 @@ class WarehouseEnv(ParallelEnv):
         "render_modes": ["human"],
     }
 
-    def __init__(self, grid_size=(9, 9), n_robots=3, n_targets=3, max_steps=50, render=False, render_fps=10):
+    def __init__(self, grid_size=(6, 6), n_robots=3, n_targets=3, max_steps=50, render=False, render_fps=10):
         self.grid_h, self.grid_w = grid_size
         self.n_robots = n_robots
         self.n_targets = n_targets
@@ -71,6 +71,9 @@ class WarehouseEnv(ParallelEnv):
         # Last-step diagnostics for visualization
         self.last_step_rewards = {a: 0.0 for a in self.possible_agents}
         self.last_q_values = None
+        # Track state-action pairs for episode summary heatmap
+        self.episode_actions = {a: [] for a in self.possible_agents}
+        self.episode_states = {a: [] for a in self.possible_agents}
         
         # Initialize Q-table logger
         self.logger = QTableLogger(log_dir="logs", log_filename="q_tables.txt")
@@ -87,6 +90,9 @@ class WarehouseEnv(ParallelEnv):
 
         self.agents = self.possible_agents[:]
         self.step_count = 0
+        # Reset episode tracking for state-action heatmap
+        self.episode_actions = {a: [] for a in self.possible_agents}
+        self.episode_states = {a: [] for a in self.possible_agents}
 
         self.grid = np.zeros((self.grid_h, self.grid_w), dtype=int)
 
@@ -170,6 +176,11 @@ class WarehouseEnv(ParallelEnv):
 
             # small time penalty
             rewards[agent] -= 0.01
+            
+            # Track state-action for episode heatmap
+            state_id = r * self.grid_w + c  # simple state encoding: position
+            self.episode_actions[agent].append(int(act))
+            self.episode_states[agent].append(state_id)
 
             if act == ACTION_PICK:
                 if cell == TARGET and self.robot_carry[agent] == 0:
@@ -314,6 +325,61 @@ class WarehouseEnv(ParallelEnv):
             step=self.step_count,
             save_dir=save_dir
         )
+
+    def save_episode_state_action_heatmap(self, episode=None, save_dir="logs/visualizations"):
+        """
+        Save a condensed heatmap of state-action frequencies for visited states only.
+        
+        Args:
+            episode: Episode number (optional)
+            save_dir: Directory to save heatmap
+        """
+        import os
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        
+        os.makedirs(save_dir, exist_ok=True)
+        
+        # For each agent, create a heatmap of state x action frequencies
+        for agent_name in self.possible_agents:
+            actions = self.episode_actions.get(agent_name, [])
+            states = self.episode_states.get(agent_name, [])
+            
+            if not actions or not states:
+                continue
+            
+            # Create a condensed heatmap with only visited states (much simpler!)
+            unique_states = sorted(set(states))
+            n_visited_states = len(unique_states)
+            n_actions = 7
+            
+            # Map state_id to row index in heatmap
+            state_to_row = {state_id: i for i, state_id in enumerate(unique_states)}
+            heatmap = np.zeros((n_visited_states, n_actions))
+            
+            for state_id, action in zip(states, actions):
+                if state_id in state_to_row and 0 <= action < n_actions:
+                    heatmap[state_to_row[state_id], action] += 1
+            
+            # Create figure with grid coordinates as labels for clarity
+            fig, ax = plt.subplots(figsize=(10, max(4, n_visited_states * 0.3)))
+            sns.heatmap(heatmap, cmap='YlOrRd', ax=ax, cbar_kws={'label': 'Frequency'})
+            ax.set_xlabel('Action', fontsize=11)
+            ax.set_ylabel('State (col, row)', fontsize=11)
+            ax.set_title(f'State-Action Heatmap for {agent_name} (Episode {episode}) - {n_visited_states} visited states')
+            
+            # Create state labels with grid coordinates (col, row) for readability
+            state_labels = [f"({s % self.grid_w},{s // self.grid_w})" for s in unique_states]
+            ax.set_yticklabels(state_labels, rotation=0, fontsize=9)
+            ax.set_xticklabels(['STAY', 'UP', 'DOWN', 'LEFT', 'RIGHT', 'PICK', 'DROP'], rotation=45)
+            
+            # Save
+            ep_str = f"_ep{episode}" if episode is not None else ""
+            filename = f"{save_dir}/{agent_name}_state_action_heatmap{ep_str}.png"
+            plt.tight_layout()
+            plt.savefig(filename, dpi=100)
+            plt.close()
+            print(f"[HEATMAP] Saved to {filename} ({n_visited_states} states visited)")
 
 
 # Small manual test: python warehouse_env_simple.py
