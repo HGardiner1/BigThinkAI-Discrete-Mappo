@@ -309,3 +309,27 @@ class QTableLogger:
         plt.close()
         
         print(f"[LOGGER] Statistics plot saved: {filepath}")
+
+    # --------------------------------------------------------------- #
+
+    def log_episode_summary(self, episode, total_reward, n_steps, agent_rewards=None):
+        """
+        Log episode summary statistics.
+        
+        Args:
+            episode (int): Episode number
+            total_reward (float): Total reward for the episode
+            n_steps (int): Number of steps in the episode
+            agent_rewards (dict): Dictionary mapping agent names to their rewards (optional)
+        """
+        with open(self.log_path, "a") as f:
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            f.write(f"\n[{timestamp}] EPISODE {episode} SUMMARY\n")
+            f.write(f"Total Reward: {total_reward:.2f}\n")
+            f.write(f"Steps: {n_steps}\n")
+            
+            if agent_rewards is not None:
+                f.write("Agent Rewards:\n")
+                for agent_name, reward in agent_rewards.items():
+                    f.write(f"  {agent_name}: {reward:.2f}\n")
+            f.write("\n")

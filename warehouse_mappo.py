@@ -33,11 +33,12 @@ class WarehouseEnv(ParallelEnv):
         "render_modes": ["human"],
     }
 
-    def __init__(self, grid_size=(9, 9), n_robots=3, n_targets=3, max_steps=50):
+    def __init__(self, grid_size=(9, 9), n_robots=3, n_targets=3, max_steps=50, render=False, render_fps=10):
         self.grid_h, self.grid_w = grid_size
         self.n_robots = n_robots
         self.n_targets = n_targets
         self.max_steps = max_steps
+        # render flags are deprecated here; visualizer is managed by the trainer
 
         self.possible_agents = [f"robot_{i}" for i in range(n_robots)]
         self.agents = self.possible_agents[:]
@@ -64,9 +65,17 @@ class WarehouseEnv(ParallelEnv):
         self.depot_pos = None
         self.bay_pos = None
         self.step_count = 0
+        # Track deliveries for visualization/termination
+        self.completed_deliveries = 0
+        self.initial_targets = n_targets
+        # Last-step diagnostics for visualization
+        self.last_step_rewards = {a: 0.0 for a in self.possible_agents}
+        self.last_q_values = None
         
         # Initialize Q-table logger
         self.logger = QTableLogger(log_dir="logs", log_filename="q_tables.txt")
+
+        # visualizer moved to training script (create WarehouseVisualizer there)
 
     # ------------------------------------------------------------------ #
     #  Required PettingZoo methods                                       #
@@ -172,6 +181,8 @@ class WarehouseEnv(ParallelEnv):
                 if cell == DEPOT and self.robot_carry[agent] == 1:
                     self.robot_carry[agent] = 0
                     rewards[agent] += 5.0
+                    # count completed delivery
+                    self.completed_deliveries += 1
 
         # done if all targets removed or max_steps hit
         no_targets_left = not (self.grid == TARGET).any()
@@ -181,6 +192,10 @@ class WarehouseEnv(ParallelEnv):
                 terminations[a] = True
 
         obs = {a: self._get_obs(a) for a in self.agents}
+
+        # Save last-step rewards for the visualizer / external monitoring
+        # Use a dict with entries for all possible agents to keep UI stable
+        self.last_step_rewards = {a: float(rewards.get(a, 0.0)) for a in self.possible_agents}
 
         if done:
             self.agents = []
@@ -209,7 +224,7 @@ class WarehouseEnv(ParallelEnv):
         return obs
 
     def render(self):
-        """Very simple text render for debugging."""
+        """Text render fallback for debugging (visualizer is external)."""
         grid_copy = self.grid.copy()
         for agent, (r, c) in self.robot_positions.items():
             grid_copy[r, c] = 9  # mark robots as 9
@@ -233,6 +248,12 @@ class WarehouseEnv(ParallelEnv):
             episode=episode,
             step=self.step_count
         )
+        # Expose last-known Q-values to the visualizer (optional)
+        if agent_q_tables is not None:
+            # keep as-is (caller may pass dict of numpy arrays)
+            self.last_q_values = agent_q_tables
+        elif central_q_table is not None:
+            self.last_q_values = {'central': central_q_table}
 
     def visualize_q_tables(self, central_q_table=None, agent_q_tables=None, 
                            episode=None, save_dir="logs/visualizations"):
