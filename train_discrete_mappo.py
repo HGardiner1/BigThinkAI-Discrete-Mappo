@@ -1,5 +1,5 @@
 import numpy as np
-from warehouse_mappo import WarehouseEnv
+from warehouse_mappo import WarehouseEnv, ACTION_DROP
 from mappo_agent import MAPPOAgent
 from mappo_buffer import MAPPOBuffer
 import torch
@@ -53,6 +53,11 @@ for ep in range(EPISODES):
 
         # Select actions and get agent Q-tables (logits proxy)
         actions, log_probs, q_tables = mappo.act(obs, agent_order)
+        # Force immediate drop whenever an agent reaches the depot carrying a target;
+        # this speeds up returning payloads instead of wasting steps waiting for learning.
+        for agent in agent_order:
+            if env.robot_carry.get(agent, 0) == 1 and env.robot_positions.get(agent) == env.depot_pos:
+                actions[agent] = ACTION_DROP
 
         # Step env
         next_obs, rewards, terms, truncs, infos = env.step(actions)
